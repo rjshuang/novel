@@ -14,10 +14,7 @@ import (
 	"github.com/siongui/gojianfan"
 )
 
-var (
-	ProxyPool []string
-)
-
+// BookInfo 书籍信息
 type BookInfo struct {
 	Name        string
 	Author      string
@@ -29,16 +26,18 @@ type BookInfo struct {
 	ChapterList []*ChapterInfo
 }
 
+// ChapterInfo 章节信息
 type ChapterInfo struct {
 	Title   string
 	Url     string
 	Content []string
 }
 
+// Handler 书源处理器，对应 rules.json 中的一条书源规则
 type Handler struct {
-	RateLimit bool   `json:"rate_limit"`
-	EndPoint  string `json:"endpoint"`
-	Search    struct {
+	Name     string `json:"name"`
+	EndPoint string `json:"endpoint"`
+	Search   struct {
 		Uri    string            `json:"uri"`
 		Method string            `json:"method"`
 		Params map[string]string `json:"params"`
@@ -73,10 +72,8 @@ type Handler struct {
 	} `json:"content"`
 }
 
+// SearchKeyword 根据关键词搜索书籍
 func (h *Handler) SearchKeyword(keyword string) ([]*BookInfo, error) {
-	var resp *http.Response
-	var err error
-
 	params := url.Values{}
 	for k, v := range h.Search.Params {
 		if v == "?" {
@@ -86,28 +83,35 @@ func (h *Handler) SearchKeyword(keyword string) ([]*BookInfo, error) {
 		}
 	}
 
-	bookInfo := make([]*BookInfo, 0)
+	var resp *http.Response
+	var err error
 	if h.Search.Method == "GET" {
-		s := h.EndPoint + h.Search.Uri
+		reqUrl := h.EndPoint + h.Search.Uri
 		if len(params) > 0 {
-			s += fmt.Sprintf("?%s", params.Encode())
+			reqUrl += "?" + params.Encode()
 		}
-		resp, err = http_util.Request(s, "GET", h.Search.Header, nil, !h.RateLimit, ProxyPool)
+		resp, err = http_util.Request(reqUrl, "GET", h.Search.Header, nil)
 	} else {
 		body := strings.NewReader(params.Encode())
-		resp, err = http_util.Request(h.EndPoint+h.Search.Uri, "POST", h.Search.Header, body, !h.RateLimit, nil)
+		resp, err = http_util.Request(h.EndPoint+h.Search.Uri, "POST", h.Search.Header, body)
 	}
 	if err != nil {
-		return bookInfo, err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return bookInfo, fmt.Errorf("request not 200")
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("请求返回状态码 %d", resp.StatusCode)
 	}
 
 	doc := htmlquery.Parse(resp.Body)
-	bookNode := doc.Find(h.Book.Path)
-	for _, node := range bookNode {
+	if doc == nil {
+		return nil, fmt.Errorf("解析 HTML 失败")
+	}
+
+	bookNodes := doc.Find(h.Book.Path)
+	bookInfo := make([]*BookInfo, 0, len(bookNodes))
+	for _, node := range bookNodes {
 		book := &BookInfo{
 			Name:        node.FindAndGet(h.Book.Detail.Name),
 			Url:         common.FormatUri(h.EndPoint, node.FindAndGet(h.Book.Detail.Uri)),
@@ -125,28 +129,29 @@ func (h *Handler) SearchKeyword(keyword string) ([]*BookInfo, error) {
 	return bookInfo, nil
 }
 
+// SearchChapterList 获取书籍的章节列表（支持分页）
 func (h *Handler) SearchChapterList(book *BookInfo) error {
-	var resp *http.Response
-	var err error
-	defer func() {
-		if resp != nil {
-			resp.Body.Close()
-		}
-	}()
-
 	pageNum := 1
 	reqUrl := book.Url
+
 	for i := 1; i <= pageNum && reqUrl != ""; i++ {
-		resp, err = http_util.Request(reqUrl, "GET", nil, nil, !h.RateLimit, ProxyPool)
+		resp, err := http_util.Request(reqUrl, "GET", nil, nil)
 		if err != nil {
-			return err
+			return fmt.Errorf("请求章节列表失败: %w", err)
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("request not 200")
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("章节列表请求返回状态码 %d", resp.StatusCode)
 		}
 
 		doc := htmlquery.Parse(resp.Body)
+		resp.Body.Close()
+
+		if doc == nil {
+			return fmt.Errorf("解析章节列表 HTML 失败: %s", reqUrl)
+		}
+
+		// 尝试从页面元信息获取封面和描述
 		if book.ImageUrl == "" {
 			if imgList := doc.Find("//meta[@property='og:image']"); len(imgList) > 0 {
 				book.ImageUrl = common.FormatUri(h.EndPoint, imgList[0].GetAttr("content"))
@@ -158,27 +163,35 @@ func (h *Handler) SearchChapterList(book *BookInfo) error {
 			}
 		}
 
+		// 解析章节列表
 		for _, a := range doc.Find(h.Chapter.Path) {
-			c := &ChapterInfo{Title: a.GetText(), Url: common.FormatUri(h.EndPoint, a.GetAttr("href"))}
+			c := &ChapterInfo{
+				Title: a.GetText(),
+				Url:   common.FormatUri(h.EndPoint, a.GetAttr("href")),
+			}
 			if c.Title == "" && h.Chapter.Title != "" {
 				c.Title = a.FindAndGet(h.Chapter.Title)
 			}
 			book.ChapterList = append(book.ChapterList, c)
 		}
 
+		// 处理分页
 		reqUrl = ""
-		pageNode := doc.Find(h.Chapter.Page.Path)
-		for _, node := range pageNode {
-			if node.GetAttr("href") != "" {
+		pageNodes := doc.Find(h.Chapter.Page.Path)
+		for _, node := range pageNodes {
+			if href := node.GetAttr("href"); href != "" {
 				if node.GetText() == h.Chapter.Page.Pattern {
-					reqUrl = common.FormatUri(h.EndPoint, node.GetAttr("href"))
-					pageNum++
-					break
+					reqUrl = common.FormatUri(h.EndPoint, href)
+				} else if !strings.Contains(book.Url, href) {
+					reqUrl = h.EndPoint + h.Chapter.Page.Pattern + href
 				}
+				pageNum++
+				break
 			} else {
-				s := node.GetText()
-				if strings.Contains(s, "/") {
-					pageNum, err = strconv.Atoi(strings.Split(s, "/")[1])
+				text := node.GetText()
+				if strings.Contains(text, "/") {
+					parts := strings.Split(text, "/")
+					pageNum, err = strconv.Atoi(parts[1])
 					if err == nil {
 						reqUrl = book.Url + fmt.Sprintf(h.Chapter.Page.Pattern, i+1)
 						break
@@ -190,35 +203,40 @@ func (h *Handler) SearchChapterList(book *BookInfo) error {
 	return nil
 }
 
+// SearchContent 下载章节正文内容（支持翻页）
 func (h *Handler) SearchContent(chapter *ChapterInfo) error {
-	var resp *http.Response
-	var err error
-	defer func() {
-		if resp != nil {
-			resp.Body.Close()
-		}
-	}()
-
 	pre := strings.TrimSuffix(chapter.Url, ".html")
-	for reqUrl := chapter.Url; reqUrl != ""; {
-		resp, err = http_util.Request(reqUrl, "GET", nil, nil, h.RateLimit, ProxyPool)
+	reqUrl := chapter.Url
+
+	for reqUrl != "" {
+		resp, err := http_util.Request(reqUrl, "GET", nil, nil)
 		if err != nil {
-			return err
+			return fmt.Errorf("请求章节内容失败: %w", err)
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("request not 200")
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("章节内容请求返回状态码 %d", resp.StatusCode)
 		}
 
 		doc := htmlquery.Parse(resp.Body)
+		resp.Body.Close()
+
+		if doc == nil {
+			return fmt.Errorf("解析章节内容 HTML 失败: %s", reqUrl)
+		}
+
+		// 提取正文，繁体转简体
 		content := doc.FindAndGet(h.Content.Path)
 		content = gojianfan.T2S(content)
+		content = strings.TrimLeft(content, chapter.Title)
 		content = strings.Trim(content, "\n")
 		chapter.Content = append(chapter.Content, strings.Split(content, "\n")...)
 
+		// 检查是否有下一页
 		reqUrl = ""
 		if aList := doc.Find(h.Content.Page.Path); len(aList) > 0 {
-			if href := aList[0].GetAttr("href"); href != "" && aList[0].GetText() == h.Content.Page.Pattern &&
+			if href := aList[0].GetAttr("href"); href != "" &&
+				aList[0].GetText() == h.Content.Page.Pattern &&
 				strings.HasPrefix(common.FormatUri(h.EndPoint, href), pre) {
 				reqUrl = common.FormatUri(h.EndPoint, href)
 			}

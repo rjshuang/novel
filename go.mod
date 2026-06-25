@@ -2,8 +2,6 @@ module github.com/rjshuang/novel
 
 go 1.22.0
 
-toolchain go1.24.12
-
 require (
 	github.com/bmaupin/go-epub v1.1.0
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de

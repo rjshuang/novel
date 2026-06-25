@@ -1,0 +1,163 @@
+[
+    {
+        "endpoint": "https://www.101kanshu.net",
+        "name": "101看书网",
+        "search": {
+            "uri": "/101search",
+            "method": "POST",
+            "header": {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            "params": {
+                "submit": "",
+                "searchkey": "?"
+            }
+        },
+        "book": {
+            "path": "//div[@class='bookinfo']",
+            "detail": {
+                "name": "//h4[@class='bookname']/a",
+                "uri": "//h4[@class='bookname']/a[@href]",
+                "img_uri": "",
+                "author": "//div[0]",
+                "last_chapter": "//div[2]/a",
+                "last_update": "",
+                "description": "//div[3]"
+            }
+        },
+        "chapter": {
+            "path": "//div[@id='list-chapterAll']/dd/a",
+            "page": {
+                "path": "",
+                "pattern": ""
+            }
+        },
+        "content": {
+            "path": "//div[@class='readcontent']",
+            "page": {
+                "path": "//a[@id='linkNext']",
+                "pattern": "下一页"
+            }
+        }
+    },
+    {
+        "endpoint": "https://www.22biqu.com",
+        "name": "笔趣阁",
+        "search": {
+            "uri": "/ss",
+            "method": "POST",
+            "header": {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            "params": {
+                "Submit": "搜索",
+                "searchkey": "?"
+            }
+        },
+        "book": {
+            "path": "//div[@class='row']/div/ul/li",
+            "detail": {
+                "name": "//span[1]/a",
+                "uri": "//span[1]/a[@href]",
+                "img_uri": "",
+                "author": "//span[3]",
+                "last_chapter": "//span[2]/a",
+                "last_update": "//span[4]",
+                "description": ""
+            }
+        },
+        "chapter": {
+            "path": "//div[@class='section-box' 1]/ul/li/a",
+            "page": {
+                "path": "//a[@class='index-container-btn']",
+                "pattern": "下一页"
+            }
+        },
+        "content": {
+            "path": "//div[@id='content']",
+            "page": {
+                "path": "//a[@id='next_url']",
+                "pattern": "下一页"
+            }
+        }
+    },
+    {
+        "endpoint": "https://www.luoxia123.com",
+        "name": "落霞小说",
+        "search": {
+            "uri": "/e/search/index.php",
+            "method": "POST",
+            "header": {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            "params": {
+                "tbname": "bookname",
+                "show": "title,writer",
+                "tempid": "1",
+                "keyboard": "?"
+            }
+        },
+        "book": {
+            "path": "//table/tbody/tr",
+            "detail": {
+                "name": "//td[0]/a[@title]",
+                "uri": "//td[0]/a[@href]",
+                "img_uri": "",
+                "author": "//td[2]",
+                "last_chapter": "//td[1]/a",
+                "last_update": "//td[3]",
+                "description": ""
+            }
+        },
+        "chapter": {
+            "path": "//div[@class='panel panel-danger m-cover']/ul/li/a",
+            "page": {
+                "path": "",
+                "pattern": ""
+            }
+        },
+        "content": {
+            "path": "//div[@id='content']",
+            "page": {
+                "path": "//div[@class='m-page']/a[2]",
+                "pattern": "下一章"
+            }
+        }
+    },
+    {
+        "endpoint": "https://www.sudugu.org",
+        "name": "速读谷",
+        "search": {
+            "uri": "/128/",
+            "method": "GET",
+            "header": {},
+            "params": {}
+        },
+        "book": {
+            "path": "//div[@class='container' 0]",
+            "detail": {
+                "name": "//div[@class='item']/a/img[@alt]",
+                "uri": "//div[@class='item']/a[@href]",
+                "img_uri": "//div[@class='item']/a/img[@src]",
+                "author": "//div[class='itemtxt']/p/a",
+                "last_chapter": "//div[2]/a",
+                "last_update": "//h2[@id='dir']/span",
+                "description": "//div[class='des bb' 0]"
+            }
+        },
+        "chapter": {
+            "path": "//div[@id='list']/ul/li/a",
+            "page": {
+                "path": "//a[@class='gr']",
+                "pattern": "/128/"
+            }
+        },
+        "content": {
+            "path": "//div[@class='con']",
+            "page": {
+                "path": "//div[@class='prenext']/span[1]/a",
+                "pattern": "下一页"
+            }
+        }
+    }
+]

@@ -1,15 +1,12 @@
 package http_util
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
-
-	"github.com/rjshuang/novel/common"
 
 	"golang.org/x/net/proxy"
 )
@@ -20,66 +17,52 @@ const (
 	Timeout10Sec = 10
 
 	CheckURL = "https://www.baidu.com"
+
+	// DefaultUA 默认 User-Agent，模拟 Chrome 浏览器
+	DefaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
 var (
-	unavailableProxy = make(map[string][]string)
+	defaultClient     *http.Client
+	defaultClientOnce sync.Once
 )
 
-func Request(url, method string, header map[string]string, body io.Reader, retry bool, proxyList []string) (resp *http.Response, err error) {
-	if len(proxyList) == 0 {
-		proxyList = []string{""}
+// getDefaultClient 获取或创建默认 HTTP 客户端（单例复用）
+func getDefaultClient() *http.Client {
+	defaultClientOnce.Do(func() {
+		defaultClient = &http.Client{
+			Transport: &http.Transport{},
+			Timeout:   time.Second * Timeout10Sec,
+		}
+	})
+	return defaultClient
+}
+
+// Request 发送 HTTP 请求，自动添加默认 User-Agent
+func Request(url, method string, header map[string]string, body io.Reader) (resp *http.Response, err error) {
+	client := getDefaultClient()
+
+	var req *http.Request
+	switch method {
+	case http.MethodGet:
+		req, err = http.NewRequest("GET", url, nil)
+	case http.MethodPost:
+		req, err = http.NewRequest("POST", url, body)
+	default:
+		return nil, errors.New("不支持的请求方法: " + method)
 	}
-	var errList []map[string]string
-	for _, proxy := range proxyList {
-		if arr, ok := unavailableProxy[url]; ok && common.Contains(arr, proxy) {
-			continue
-		}
-		client, err := GetClient(proxy, Timeout10Sec)
-		if err != nil {
-			return nil, err
-		}
-		var req *http.Request
-		switch method {
-		case http.MethodGet:
-			req, err = http.NewRequest("GET", url, nil)
-		case http.MethodPost:
-			req, err = http.NewRequest("POST", url, body)
-		default:
-			return nil, errors.New("unsupported method: " + method)
-		}
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range header {
-			req.Header.Set(k, v)
-		}
-		cnt := 1
-		if retry {
-			cnt = RetryTimes
-		}
-		for i := 0; i < cnt; i++ {
-			if resp, err = client.Do(req); err == nil && resp.StatusCode == http.StatusOK {
-				return resp, err
-			}
-			if i < cnt-1 {
-				time.Sleep(time.Second * Timeout3Sec)
-			}
-		}
-		errMsg := map[string]string{"proxy_url": proxy}
-		if err != nil {
-			errMsg["err"] = err.Error()
-		}
-		if resp != nil {
-			data, _ := io.ReadAll(resp.Body)
-			errMsg["resp_data"] = string(data)
-			errMsg["status_code"] = fmt.Sprint(resp.StatusCode)
-		}
-		errList = append(errList, errMsg)
-		unavailableProxy[url] = append(unavailableProxy[url], proxy)
+	if err != nil {
+		return nil, err
 	}
-	d, _ := json.Marshal(errList)
-	return resp, errors.New(string(d))
+
+	// 设置默认 User-Agent
+	req.Header.Set("User-Agent", DefaultUA)
+
+	// 设置自定义请求头（可覆盖 User-Agent）
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	return client.Do(req)
 }
 
 func GetClient(proxyUrl string, timeoutSec int) (*http.Client, error) {
